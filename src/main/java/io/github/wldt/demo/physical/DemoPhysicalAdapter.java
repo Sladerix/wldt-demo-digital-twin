@@ -106,10 +106,9 @@ public class DemoPhysicalAdapter extends PhysicalAdapter {
         };
     }
 
-    private Runnable deviceEmulation(){
+    private Runnable deviceEmulation() {
         return () -> {
             try {
-
 
                 System.out.println("[DemoPhysicalAdapter] -> Sleeping before Starting Physical Device Emulation ...");
 
@@ -131,12 +130,12 @@ public class DemoPhysicalAdapter extends PhysicalAdapter {
                 publishPhysicalRelationshipInstance();
 
                 //Emulate the generation on 'n' temperature measurements
-                for(int i = 0; i < GlobalKeywords.MESSAGE_UPDATE_NUMBER; i++){
+                for ( int i = 0; i < GlobalKeywords.MESSAGE_UPDATE_NUMBER; i++ ) {
 
                     //Sleep to emulate sensor measurement
                     Thread.sleep(GlobalKeywords.MESSAGE_UPDATE_TIME);
 
-                    //Update the
+                    //Update the temperature
                     double randomTemperature = GlobalKeywords.TEMPERATURE_MIN_VALUE + (GlobalKeywords.TEMPERATURE_MAX_VALUE - GlobalKeywords.TEMPERATURE_MIN_VALUE) * r.nextDouble();
 
                     //Create a new event to notify the variation of a Physical Property

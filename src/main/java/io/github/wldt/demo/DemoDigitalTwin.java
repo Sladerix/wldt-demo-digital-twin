@@ -5,9 +5,13 @@ import io.github.wldt.demo.digital.DemoDigitalAdapterConfiguration;
 import io.github.wldt.demo.logger.DemoEventLogger;
 import io.github.wldt.demo.physical.DemoConfPhysicalAdapter;
 import io.github.wldt.demo.physical.DemoPhysicalAdapterConfiguration;
+
 import it.wldt.core.engine.DigitalTwin;
 import it.wldt.core.engine.DigitalTwinEngine;
 import it.wldt.core.event.WldtEventBus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 
 /**
  * Main class to build and test a demo Digital Twin with the created physical and digital adapters
@@ -18,7 +22,6 @@ public class DemoDigitalTwin {
 
     public static void main(String[] args)  {
         try{
-
             // Create the new Digital Twin
             DigitalTwin digitalTwin = new DigitalTwin(
                     "test-dt-id",
@@ -46,7 +49,7 @@ public class DemoDigitalTwin {
             digitalTwinEngine.startAll();
 
         }catch (Exception e){
-            e.printStackTrace();
+            System.err.println(e.getMessage());
         }
     }
 }

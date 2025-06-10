@@ -1,6 +1,10 @@
 package io.github.wldt.demo;
 
+import io.github.wldt.demo.monitoring.OpenTelemetryWLDTMonitoring;
 import io.github.wldt.demo.utils.GlobalKeywords;
+import io.opentelemetry.api.GlobalOpenTelemetry;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.context.Scope;
 import it.wldt.adapter.digital.event.DigitalActionWldtEvent;
 import it.wldt.adapter.physical.PhysicalAssetDescription;
 import it.wldt.adapter.physical.PhysicalAssetRelationshipInstance;
@@ -10,8 +14,11 @@ import it.wldt.adapter.physical.event.PhysicalAssetRelationshipInstanceCreatedWl
 import it.wldt.adapter.physical.event.PhysicalAssetRelationshipInstanceDeletedWldtEvent;
 import it.wldt.core.model.ShadowingFunction;
 import it.wldt.core.state.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Map;
+import java.util.Random;
 
 /**
  * Authors:
@@ -21,8 +28,12 @@ import java.util.Map;
  */
 public class DemoShadowingFunction extends ShadowingFunction {
 
+    private static final Logger logger = LoggerFactory.getLogger(DemoShadowingFunction.class);
+    OpenTelemetryWLDTMonitoring otMetricExporter;
+
     public DemoShadowingFunction(String id) {
         super(id);
+        maybeRunWithSpan(() -> logger.info("A slf4j log message without a span"), false);
     }
 
     //// Shadowing Function Management Callbacks ////
@@ -47,15 +58,16 @@ public class DemoShadowingFunction extends ShadowingFunction {
     @Override
     protected void onDigitalTwinBound(Map<String, PhysicalAssetDescription> adaptersPhysicalAssetDescriptionMap) {
 
-        try{
+        try {
 
-            System.out.println("[TestShadowingFunction] -> onDigitalTwinBound(): " + adaptersPhysicalAssetDescriptionMap);
+            logger.info("[TestShadowingFunction] -> onDigitalTwinBound(): {}", adaptersPhysicalAssetDescriptionMap);
 
             // NEW in 0.3.0 -> Start DT State Change Transaction
             this.digitalTwinStateManager.startStateTransaction();
 
             //Iterate over all the received PAD from connected Physical Adapters
             adaptersPhysicalAssetDescriptionMap.values().forEach(pad -> {
+
                 pad.getProperties().forEach(property -> {
                     try {
 
@@ -67,40 +79,12 @@ public class DemoShadowingFunction extends ShadowingFunction {
                         //incoming physical property of the target type and with the target key
                         this.observePhysicalAssetProperty(property);
 
-                        System.out.println("[TestShadowingFunction] -> onDigitalTwinBound() -> Property Created & Observed:" + property.getKey());
+                        logger.info("[TestShadowingFunction] -> onDigitalTwinBound() -> Property Created & Observed:{}", property.getKey());
 
                     } catch (Exception e) {
-                        e.printStackTrace();
+                        logger.error(e.getMessage());
                     }
                 });
-
-                //Iterate over available declared Physical Property only for the target Physical Adapter's PAD
-                /*
-                pad.getProperties().forEach(property -> {
-                    try {
-
-                        //Check property Key and type
-                        if(property.getKey().equals("temperature-property-key")
-                                && property.getInitialValue() != null
-                                &&  property.getInitialValue() instanceof Double) {
-
-                            //Instantiate a new DT State Property of the right type, the same key and initial value
-                            DigitalTwinStateProperty<Double> dtStateProperty = new DigitalTwinStateProperty<Double>(property.getKey(),(Double) property.getInitialValue());
-
-                            //Create and write the property on the DT's State
-                            this.digitalTwinState.createProperty(dtStateProperty);
-
-                            //Start observing the variation of the physical property in order to receive notifications
-                            //Without this call the Shadowing Function will not receive any notifications or callback about
-                            //incoming physical property of the target type and with the target key
-                            this.observePhysicalAssetProperty(property);
-                        }
-
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-                });
-                */
 
                 //Iterate over available declared Physical Events for the target Physical Adapter's PAD
                 pad.getEvents().forEach(event -> {
@@ -117,10 +101,10 @@ public class DemoShadowingFunction extends ShadowingFunction {
                         //incoming physical events of the target type and with the target key
                         this.observePhysicalAssetEvent(event);
 
-                        System.out.println("[TestShadowingFunction] -> onDigitalTwinBound() -> Event Created & Observed:" + event.getKey());
+                        logger.info("[TestShadowingFunction] -> onDigitalTwinBound() -> Event Created & Observed:{}", event.getKey());
 
                     } catch (Exception e) {
-                        e.printStackTrace();
+                        logger.error(e.getMessage());
                     }
                 });
 
@@ -134,10 +118,10 @@ public class DemoShadowingFunction extends ShadowingFunction {
                         //Enable the action on the DT's State
                         this.digitalTwinStateManager.enableAction(dtStateAction);
 
-                        System.out.println("[TestShadowingFunction] -> onDigitalTwinBound() -> Action Enabled:" + action.getKey());
+                        logger.info("[TestShadowingFunction] -> onDigitalTwinBound() -> Action Enabled:{}", action.getKey());
 
                     } catch (Exception e) {
-                        e.printStackTrace();
+                        logger.error(e.getMessage());
                     }
                 });
 
@@ -151,10 +135,10 @@ public class DemoShadowingFunction extends ShadowingFunction {
 
                             observePhysicalAssetRelationship(relationship);
 
-                            System.out.println("[TestShadowingFunction] -> onDigitalTwinBound() -> Relationship Created & Observed :" + relationship.getName());
+                            logger.info("[TestShadowingFunction] -> onDigitalTwinBound() -> Relationship Created & Observed :{}", relationship.getName());
                         }
                     }catch (Exception e){
-                        e.printStackTrace();
+                        logger.error(e.getMessage());
                     }
                 });
 
@@ -162,6 +146,16 @@ public class DemoShadowingFunction extends ShadowingFunction {
 
             // NEW in 0.3.0 -> Commit DT State Change Transaction to apply the changes on the DT State and notify about the change
             this.digitalTwinStateManager.commitStateTransaction();
+
+            // WLDT Metrics
+            otMetricExporter = new OpenTelemetryWLDTMonitoring(this.digitalTwinStateManager);
+            otMetricExporter.watchPropertyDoubleGauge(GlobalKeywords.TEMPERATURE_PROPERTY_KEY);
+            otMetricExporter.addLongCounter("test.long.counter", 0L);
+            otMetricExporter.addDoubleCounter("test.double.counter", 0.0);
+            otMetricExporter.addLongGauge("test.long.gauge", 0L);
+            otMetricExporter.addDoubleGauge("test.double.gauge", 0.0);
+
+
 
             //Start observation to receive all incoming Digital Action through active Digital Adapter
             //Without this call the Shadowing Function will not receive any notifications or callback about
@@ -172,8 +166,8 @@ public class DemoShadowingFunction extends ShadowingFunction {
             //internal status according to what is available and declared through the Physical Adapters
             notifyShadowingSync();
 
-        }catch (Exception e){
-            e.printStackTrace();
+        } catch (Exception e) {
+            logger.error(e.getMessage());
         }
     }
 
@@ -194,7 +188,7 @@ public class DemoShadowingFunction extends ShadowingFunction {
 
         try {
 
-            System.out.println("[TestShadowingFunction] -> onPhysicalAssetPropertyVariation() -> Variation on Property :" + physicalAssetPropertyWldtEvent.getPhysicalPropertyId());
+            logger.info("[TestShadowingFunction] -> onPhysicalAssetPropertyVariation() -> Variation on Property :{}", physicalAssetPropertyWldtEvent.getPhysicalPropertyId());
 
             //Update Digital Twin State
             //NEW from 0.3.0 -> Start State Transaction
@@ -207,10 +201,15 @@ public class DemoShadowingFunction extends ShadowingFunction {
             //NEW from 0.3.0 -> Commit State Transaction
             this.digitalTwinStateManager.commitStateTransaction();
 
-            System.out.println("[TestShadowingFunction] -> onPhysicalAssetPropertyVariation() -> DT State UPDATE Property :" + physicalAssetPropertyWldtEvent.getPhysicalPropertyId());
+            this.otMetricExporter.incrementLongCounter("test.long.counter", 1L);
+            this.otMetricExporter.incrementDoubleCounter("test.double.counter", 1.43);
+            this.otMetricExporter.setLongGauge("test.long.gauge", new Random().nextLong(101));
+            this.otMetricExporter.setDoubleGauge("test.double.gauge", new Random().nextDouble(101));
+
+            logger.info("[TestShadowingFunction] -> onPhysicalAssetPropertyVariation() -> DT State UPDATE Property :{}", physicalAssetPropertyWldtEvent.getPhysicalPropertyId());
 
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error(e.getMessage());
         }
 
     }
@@ -221,17 +220,17 @@ public class DemoShadowingFunction extends ShadowingFunction {
     protected void onPhysicalAssetEventNotification(PhysicalAssetEventWldtEvent<?> physicalAssetEventWldtEvent) {
         try {
 
-            System.out.println("[TestShadowingFunction] -> onPhysicalAssetPropertyVariation() -> Notification for Event :" + physicalAssetEventWldtEvent.getPhysicalEventKey());
+            logger.info("[TestShadowingFunction] -> onPhysicalAssetPropertyVariation() -> Notification for Event :{}", physicalAssetEventWldtEvent.getPhysicalEventKey());
 
             this.digitalTwinStateManager.notifyDigitalTwinStateEvent(new DigitalTwinStateEventNotification<>(
                     physicalAssetEventWldtEvent.getPhysicalEventKey(),
                     physicalAssetEventWldtEvent.getBody(),
                     physicalAssetEventWldtEvent.getCreationTimestamp()));
 
-            System.out.println("[TestShadowingFunction] -> onPhysicalAssetPropertyVariation() -> DT State Notification for Event:" + physicalAssetEventWldtEvent.getPhysicalEventKey());
+            logger.info("[TestShadowingFunction] -> onPhysicalAssetPropertyVariation() -> DT State Notification for Event:{}", physicalAssetEventWldtEvent.getPhysicalEventKey());
 
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error(e.getMessage());
         }
     }
 
@@ -265,7 +264,7 @@ public class DemoShadowingFunction extends ShadowingFunction {
                 }
             }
         }catch (Exception e){
-            e.printStackTrace();
+            logger.error(e.getMessage());
         }
     }
 
@@ -281,7 +280,20 @@ public class DemoShadowingFunction extends ShadowingFunction {
         try {
             this.publishPhysicalAssetActionWldtEvent(digitalActionWldtEvent.getActionKey(), digitalActionWldtEvent.getBody());
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error(e.getMessage());
+        }
+    }
+
+    private static void maybeRunWithSpan(Runnable runnable, boolean withSpan) {
+        if (!withSpan) {
+            runnable.run();
+            return;
+        }
+        Span span = GlobalOpenTelemetry.getTracer("my-tracer").spanBuilder("my-span").startSpan();
+        try (Scope unused = span.makeCurrent()) {
+            runnable.run();
+        } finally {
+            span.end();
         }
     }
 }
